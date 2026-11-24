@@ -90,7 +90,7 @@
 <script src="follow.js"></script>
 <script>
 (() => {
-  const APP_VERSION = 'v5 (chord follow, 24 Nov)';   // bump on every change so you can tell which build you are on
+  const APP_VERSION = 'v6 (follow starts scrolling earlier, 24 Nov)';   // bump on every change so you can tell which build you are on
   const $ = id => document.getElementById(id);
   const LS = { get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
                set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
@@ -242,7 +242,7 @@
   let follow = null, followOn = false, fTarget = null, fRaf = 0, fLast = 0;
   function setFollowTarget(line, jump) {
     const el = document.querySelector(`.ln[data-i="${line}"]`); if (!el) return;
-    const y = Math.max(0, el.getBoundingClientRect().top + window.scrollY - innerHeight * 0.30);
+    const y = Math.max(0, el.getBoundingClientRect().top + window.scrollY - ($('topbar').offsetHeight + 24));   // current chord line sits just under the header
     if (y > window.scrollY - 5 || jump) fTarget = y;       // normally only moves forward
   }
   function followLoop(t) {
