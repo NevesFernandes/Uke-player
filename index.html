@@ -44,6 +44,7 @@
   #controls .lbl { color:var(--dim); font-size:12px; min-width:34px; text-align:center; }
   #play { min-width:64px; font-weight:700; }
   .btn.rec.on { background:#e5484d; border-color:#e5484d; color:#fff; }
+  .ln.cur { background:#1c2530; display:inline-block; min-width:100%; }
 </style>
 </head>
 <body>
@@ -82,13 +83,15 @@
     <div class="grp">
       <button class="btn rec" id="rec" title="Record pace: play and drag the text to where you are">●</button>
       <button class="btn hidden" id="clr" title="Delete recorded pace">🗑</button>
+      <button class="btn" id="follow" title="Follow my playing (microphone)">👂</button>
     </div>
   </div>
 </div>
 
+<script src="follow.js"></script>
 <script>
 (() => {
-  const APP_VERSION = 'v3 (pace tracks, 24 Nov)';   // bump on every change so you can tell which build you are on
+  const APP_VERSION = 'v4 (chord follow, 24 Nov)';   // bump on every change so you can tell which build you are on
   const $ = id => document.getElementById(id);
   const LS = { get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
                set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
@@ -126,6 +129,18 @@
     return out;
   }
 
+  function chordsInLine(l) {
+    if (isTab(l)) return [];
+    if (/^\s*(\[[^\]]*\]|#[^\n]*)\s*$/.test(l) && !/^\s*\[[A-G]/.test(l)) return [];
+    if (isChordLine(l)) return l.trim().split(/\s+/).filter(t => CHORD.test(t));
+    const out = []; const re = /\[([A-G][^\]\s]*)\]/g; let m;
+    while ((m = re.exec(l))) if (CHORD.test(m[1])) out.push(m[1]);
+    const im = /^(\s*[A-Za-zÀ-ÿ# ]+:\s+)((?:\S+\s*)+)$/.exec(l);
+    if (im && !out.length) { const toks = im[2].trim().split(/\s+/); if (toks.every(t => CHORD.test(t) || /^\(?x\d+\)?$/i.test(t))) toks.filter(t => CHORD.test(t)).forEach(t => out.push(t)); }
+    return out;
+  }
+  let events = [];
+
   // ---------- list ----------
   const norm = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   function drawList() {
@@ -143,7 +158,10 @@
   function saveSt() { LS.set('song:' + cur.id, st); }
   function drawSong() {
     const text = cur.shifts[String(st.shift)] ?? cur.shifts['0'];
-    $('song').innerHTML = text.split('\n').map(renderLine).join('\n');
+    const lines = text.split('\n');
+    events = []; lines.forEach((l, i) => chordsInLine(l).forEach(c => events.push({ chord: c, line: i })));
+    $('song').innerHTML = lines.map((l, i) => `<span class="ln" data-i="${i}">${renderLine(l)}\n</span>`).join('');
+    if (followOn && follow) { follow.setEvents(events); if (follow.pos() >= 0) markLine(events[follow.pos()].line); }
     $('song').style.fontSize = st.font + 'px';
     $('tval').textContent = (st.shift > 0 ? '+' : '') + st.shift;
     $('sval').textContent = (track && !rec) ? st.rate.toFixed(2) + '×' : st.speed;
@@ -156,14 +174,14 @@
   function openSong(id) {
     const s = DATA.songs.find(x => x.id === id);
     if (!s) { showList(); return; }
-    stop(); rec = false; recBuf = [];
+    stopFollow(); stop(); rec = false; recBuf = [];
     cur = s; st = Object.assign({ shift: 0, speed: 20, font: 16, rate: 1 }, LS.get('song:' + id, {}));
     track = LS.get('track:' + id, null);
     $('ptitle').textContent = s.title; $('partist').textContent = s.artist;
     $('list').classList.add('hidden'); $('player').classList.remove('hidden');
     window.scrollTo(0, 0); drawSong();
   }
-  function showList() { stop(); cur = null; $('player').classList.add('hidden'); $('list').classList.remove('hidden'); }
+  function showList() { stopFollow(); stop(); cur = null; $('player').classList.add('hidden'); $('list').classList.remove('hidden'); }
 
   // ---------- auto-scroll ----------
   const maxScroll = () => Math.max(1, document.documentElement.scrollHeight - innerHeight);
@@ -221,11 +239,53 @@
   function stop() { const wasRec = rec && playing; playing = false; cancelAnimationFrame(raf); if (wasRec) finishRec(); $('play').textContent = '▶'; $('play').classList.remove('on'); if (!wakeWanted) setWake(false); }
   function toggle() { playing ? stop() : start(); }
 
+  // ---------- chord following ----------
+  let follow = null, followOn = false, fTarget = null, fRaf = 0, fLast = 0;
+  function markLine(line) {
+    document.querySelectorAll('.ln.cur').forEach(e => e.classList.remove('cur'));
+    const el = document.querySelector(`.ln[data-i="${line}"]`); if (el) el.classList.add('cur');
+  }
+  function setFollowTarget(line, jump) {
+    const el = document.querySelector(`.ln[data-i="${line}"]`); if (!el) return;
+    const y = Math.max(0, el.getBoundingClientRect().top + window.scrollY - innerHeight * 0.30);
+    if (y > window.scrollY - 5 || jump) fTarget = y;       // normally only moves forward
+    markLine(line);
+  }
+  function followLoop(t) {
+    if (!followOn) return;
+    const dt = Math.min(0.1, (t - fLast) / 1000); fLast = t;
+    if (fTarget !== null) { const d = fTarget - window.scrollY; if (Math.abs(d) > 0.5) window.scrollTo(0, window.scrollY + d * (1 - Math.exp(-dt / 0.5))); }
+    fRaf = requestAnimationFrame(followLoop);
+  }
+  async function startFollow() {
+    stop(); $('warn').classList.add('hidden');
+    follow = UkeFollow.create({
+      onPos: p => setFollowTarget(p.line, p.jump),
+      onStatus: s => { $('partist').textContent = (cur.artist ? cur.artist + ' · ' : '') + '👂 ' + (s.heard ? s.heard : '…') + (s.i >= 0 ? ' · ✓' : ' · tap a line to start'); }
+    });
+    follow.setEvents(events);
+    try { await follow.start(); }
+    catch (e) { follow = null; $('warn').classList.remove('hidden'); $('warn').textContent = 'Microphone blocked. In Chrome tap the lock icon next to the address → Permissions → allow Microphone, then try again.'; return; }
+    followOn = true; fTarget = null; fLast = performance.now(); fRaf = requestAnimationFrame(followLoop);
+    $('follow').classList.add('on'); $('play').disabled = true; $('rec').disabled = true; setWake(true);
+  }
+  function stopFollow() {
+    followOn = false; cancelAnimationFrame(fRaf); if (follow) follow.stop(); follow = null; fTarget = null;
+    $('follow').classList.remove('on'); $('play').disabled = false; $('rec').disabled = false;
+    $('partist').textContent = cur ? cur.artist : ''; document.querySelectorAll('.ln.cur').forEach(e => e.classList.remove('cur'));
+    if (!wakeWanted && !playing) setWake(false);
+  }
+  window.__uke = { state: () => follow && follow.state(), events: () => events };
+
   // ---------- wiring ----------
+  $('follow').onclick = () => { followOn ? stopFollow() : startFollow(); };
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   $('back').onclick = () => { location.hash = ''; };
   $('play').onclick = toggle;
-  $('song').onclick = toggle;                                   // tap the text to start/pause
+  $('song').onclick = e => {                                    // tap the text: start/pause, or (follow mode) 'I'm here'
+    if (followOn) { const ln = e.target.closest('.ln'); if (!ln) return; const L = +ln.dataset.i; let k = events.findIndex(x => x.line >= L); if (k < 0) k = events.length - 1; if (k >= 0) follow.setPos(k); return; }
+    toggle();
+  };
   $('sdown').onclick = () => { if (track && !rec) st.rate = clamp(+(st.rate - 0.05).toFixed(2), 0.5, 2); else st.speed = clamp(st.speed - 2, 2, 150); saveSt(); drawSong(); };
   $('sup').onclick = () => { if (track && !rec) st.rate = clamp(+(st.rate + 0.05).toFixed(2), 0.5, 2); else st.speed = clamp(st.speed + 2, 2, 150); saveSt(); drawSong(); };
   $('rec').onclick = () => { if (playing) return; rec = !rec; drawSong(); };
