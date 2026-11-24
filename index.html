@@ -88,6 +88,7 @@
 
 <script>
 (() => {
+  const APP_VERSION = 'v3 (pace tracks, 24 Nov)';   // bump on every change so you can tell which build you are on
   const $ = id => document.getElementById(id);
   const LS = { get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
                set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
@@ -248,7 +249,7 @@
 
   fetch('songs.json', { cache: 'no-cache' }).then(r => r.json()).then(d => {
     DATA = d; drawList();
-    $('meta').textContent = `${d.songs.length} songs · synced ${d.generated.replace('T', ' ').replace('+00:00', ' UTC')}`;
+    $('meta').textContent = `app ${APP_VERSION} · ${d.songs.length} songs · synced ${d.generated.replace('T', ' ').replace('+00:00', ' UTC')}`;
     const id = decodeURIComponent(location.hash.slice(1)); if (id) openSong(id);
   }).catch(() => { $('songs').textContent = 'Could not load songs.json'; });
 })();
