@@ -44,7 +44,6 @@
   #controls .lbl { color:var(--dim); font-size:12px; min-width:34px; text-align:center; }
   #play { min-width:64px; font-weight:700; }
   .btn.rec.on { background:#e5484d; border-color:#e5484d; color:#fff; }
-  .ln.cur { background:#1c2530; display:inline-block; min-width:100%; }
 </style>
 </head>
 <body>
@@ -91,7 +90,7 @@
 <script src="follow.js"></script>
 <script>
 (() => {
-  const APP_VERSION = 'v4 (chord follow, 24 Nov)';   // bump on every change so you can tell which build you are on
+  const APP_VERSION = 'v5 (chord follow, 24 Nov)';   // bump on every change so you can tell which build you are on
   const $ = id => document.getElementById(id);
   const LS = { get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
                set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
@@ -161,7 +160,7 @@
     const lines = text.split('\n');
     events = []; lines.forEach((l, i) => chordsInLine(l).forEach(c => events.push({ chord: c, line: i })));
     $('song').innerHTML = lines.map((l, i) => `<span class="ln" data-i="${i}">${renderLine(l)}\n</span>`).join('');
-    if (followOn && follow) { follow.setEvents(events); if (follow.pos() >= 0) markLine(events[follow.pos()].line); }
+    if (followOn && follow) follow.setEvents(events);
     $('song').style.fontSize = st.font + 'px';
     $('tval').textContent = (st.shift > 0 ? '+' : '') + st.shift;
     $('sval').textContent = (track && !rec) ? st.rate.toFixed(2) + '×' : st.speed;
@@ -241,15 +240,10 @@
 
   // ---------- chord following ----------
   let follow = null, followOn = false, fTarget = null, fRaf = 0, fLast = 0;
-  function markLine(line) {
-    document.querySelectorAll('.ln.cur').forEach(e => e.classList.remove('cur'));
-    const el = document.querySelector(`.ln[data-i="${line}"]`); if (el) el.classList.add('cur');
-  }
   function setFollowTarget(line, jump) {
     const el = document.querySelector(`.ln[data-i="${line}"]`); if (!el) return;
     const y = Math.max(0, el.getBoundingClientRect().top + window.scrollY - innerHeight * 0.30);
     if (y > window.scrollY - 5 || jump) fTarget = y;       // normally only moves forward
-    markLine(line);
   }
   function followLoop(t) {
     if (!followOn) return;
@@ -260,8 +254,7 @@
   async function startFollow() {
     stop(); $('warn').classList.add('hidden');
     follow = UkeFollow.create({
-      onPos: p => setFollowTarget(p.line, p.jump),
-      onStatus: s => { $('partist').textContent = (cur.artist ? cur.artist + ' · ' : '') + '👂 ' + (s.heard ? s.heard : '…') + (s.i >= 0 ? ' · ✓' : ' · tap a line to start'); }
+      onPos: p => setFollowTarget(p.line, p.jump)
     });
     follow.setEvents(events);
     try { await follow.start(); }
@@ -272,7 +265,6 @@
   function stopFollow() {
     followOn = false; cancelAnimationFrame(fRaf); if (follow) follow.stop(); follow = null; fTarget = null;
     $('follow').classList.remove('on'); $('play').disabled = false; $('rec').disabled = false;
-    $('partist').textContent = cur ? cur.artist : ''; document.querySelectorAll('.ln.cur').forEach(e => e.classList.remove('cur'));
     if (!wakeWanted && !playing) setWake(false);
   }
   window.__uke = { state: () => follow && follow.state(), events: () => events };
@@ -282,10 +274,7 @@
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   $('back').onclick = () => { location.hash = ''; };
   $('play').onclick = toggle;
-  $('song').onclick = e => {                                    // tap the text: start/pause, or (follow mode) 'I'm here'
-    if (followOn) { const ln = e.target.closest('.ln'); if (!ln) return; const L = +ln.dataset.i; let k = events.findIndex(x => x.line >= L); if (k < 0) k = events.length - 1; if (k >= 0) follow.setPos(k); return; }
-    toggle();
-  };
+  $('song').onclick = () => { if (!followOn) toggle(); };       // tap the text to start/pause (not in follow mode)
   $('sdown').onclick = () => { if (track && !rec) st.rate = clamp(+(st.rate - 0.05).toFixed(2), 0.5, 2); else st.speed = clamp(st.speed - 2, 2, 150); saveSt(); drawSong(); };
   $('sup').onclick = () => { if (track && !rec) st.rate = clamp(+(st.rate + 0.05).toFixed(2), 0.5, 2); else st.speed = clamp(st.speed + 2, 2, 150); saveSt(); drawSong(); };
   $('rec').onclick = () => { if (playing) return; rec = !rec; drawSong(); };
