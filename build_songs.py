@@ -4,6 +4,7 @@
 songs_raw.json : [{"id", "title", "artist", "code"}]  (code = raw Uke Tabs Song Code, with <crd> tags)
 songs.json     : same songs with the readable text pre-transposed for every shift in SHIFTS,
                  so the web player only has to pick a variant (no transposition logic in JS).
+                 The <crd> tags are kept: they are the single source of truth for what is a chord.
 
 Usage:  python3 build_songs.py [--raw songs_raw.json] [--out songs.json] [--min -6] [--max 6]
 """
@@ -31,7 +32,7 @@ def main():
         code = s["code"].replace("\r\n", "\n")
         shifts, warnings = {}, {}
         for n in range(a.min, a.max + 1):
-            text, warns, _info = transpose(code, n)
+            text, warns, _info = transpose(code, n, tagged=True)
             shifts[str(n)] = text
             if warns:
                 warnings[str(n)] = warns

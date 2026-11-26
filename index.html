@@ -90,7 +90,7 @@
 <script src="follow.js"></script>
 <script>
 (() => {
-  const APP_VERSION = 'v6 (follow starts scrolling earlier, 24 Nov)';   // bump on every change so you can tell which build you are on
+  const APP_VERSION = 'v7 (chords = <crd> tags only, 26 Nov)';   // bump on every change so you can tell which build you are on
   const $ = id => document.getElementById(id);
   const LS = { get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
                set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
@@ -100,42 +100,27 @@
   let playing = false, pos = 0, last = 0, lastSet = 0, raf = 0, wakeLock = null, wakeWanted = LS.get('wake', false);
 
   // ---------- chord detection / highlighting ----------
-  const CHORD = /^[A-G](#|b)?(maj|min|dim|aug|sus|add|m|M)?\d*(sus\d?|add\d+)?(\/[A-G](#|b)?)?$/;
+  // One rule only: a chord is whatever the Song Code wraps in <crd>...</crd>. Position on the line is irrelevant.
+  const TAG = /<crd>(.*?)<\/crd>/g;
   const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const isTab = l => /^\s*[AECGaecg]\|/.test(l);
-  function isChordLine(l) {
-    const toks = l.trim().split(/\s+/).filter(Boolean);
-    if (!toks.length) return false;
-    let chords = 0, other = 0;
-    for (const t of toks) {
-      if (CHORD.test(t)) chords++;
-      else if (/^\(?x\d+\)?$/i.test(t) || /^N\.?C\.?$/i.test(t) || /^[|:\-–]+$/.test(t)) continue;
-      else other++;
-    }
-    return chords > 0 && other === 0;
-  }
+  const isNote = l => /^\s*(\[[^\]]*\]|#[^\n]*)\s*$/.test(l) && !/<crd>/.test(l);   // [Riff], [Intro], # comments (no chords)
   function renderLine(l) {
     if (isTab(l)) return `<span class="tb">${esc(l)}</span>`;
-    if (/^\s*(\[[^\]]*\]|#[^\n]*)\s*$/.test(l) && !/^\s*\[[A-G]/.test(l)) return `<span class="d">${esc(l)}</span>`; // [Riff], [Intro], comments
-    if (isChordLine(l)) return l.replace(/(\S+)/g, m => CHORD.test(m) ? `<span class="c">${esc(m)}</span>` : esc(m));
-    // intro-style "Intro: G F C" and inline chords like [Am] or "[A][D][E7]"
-    let out = esc(l).replace(/\[([A-G][^\]\s]*)\]/g, (m, c) => CHORD.test(c) ? `[<span class="c">${c}</span>]` : m);
-    out = out.replace(/^(\s*[A-Za-zÀ-ÿ# ]+:\s+)((?:\S+\s*)+)$/, (m, a, b) => {
-      const toks = b.trim().split(/\s+/);
-      return toks.every(t => CHORD.test(t) || /^\(?x\d+\)?$/i.test(t))
-        ? a + b.replace(/(\S+)/g, t => CHORD.test(t) ? `<span class="c">${t}</span>` : t) : m;
-    });
-    return out;
+    if (isNote(l)) return `<span class="d">${esc(l)}</span>`;
+    let out = '', pos = 0, m;
+    TAG.lastIndex = 0;
+    while ((m = TAG.exec(l))) { out += esc(l.slice(pos, m.index)) + `<span class="c">${esc(m[1])}</span>`; pos = m.index + m[0].length; }
+    return out + esc(l.slice(pos));
   }
 
+  // Chords the follow-mode can listen for (N.C. and the like are highlighted but have no sound to match).
+  const LISTENABLE = /^[A-G](#|b)?(maj|min|dim|aug|sus|add|m|M)?\d*(sus\d?|add\d+)?(\/[A-G](#|b)?)?$/;
   function chordsInLine(l) {
     if (isTab(l)) return [];
-    if (/^\s*(\[[^\]]*\]|#[^\n]*)\s*$/.test(l) && !/^\s*\[[A-G]/.test(l)) return [];
-    if (isChordLine(l)) return l.trim().split(/\s+/).filter(t => CHORD.test(t));
-    const out = []; const re = /\[([A-G][^\]\s]*)\]/g; let m;
-    while ((m = re.exec(l))) if (CHORD.test(m[1])) out.push(m[1]);
-    const im = /^(\s*[A-Za-zÀ-ÿ# ]+:\s+)((?:\S+\s*)+)$/.exec(l);
-    if (im && !out.length) { const toks = im[2].trim().split(/\s+/); if (toks.every(t => CHORD.test(t) || /^\(?x\d+\)?$/i.test(t))) toks.filter(t => CHORD.test(t)).forEach(t => out.push(t)); }
+    const out = []; let m;
+    TAG.lastIndex = 0;
+    while ((m = TAG.exec(l))) if (LISTENABLE.test(m[1].trim())) out.push(m[1].trim());
     return out;
   }
   let events = [];
