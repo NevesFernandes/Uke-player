@@ -90,7 +90,7 @@
 <script src="follow.js"></script>
 <script>
 (() => {
-  const APP_VERSION = 'v9 (one-line bottom bar, 27 Nov)';   // bump on every change so you can tell which build you are on
+  const APP_VERSION = 'v10 (follow never goes back, 27 Nov)';   // bump on every change so you can tell which build you are on
   const $ = id => document.getElementById(id);
   const LS = { get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
                set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
@@ -229,7 +229,7 @@
   function setFollowTarget(line, jump) {
     const el = document.querySelector(`.ln[data-i="${line}"]`); if (!el) return;
     const y = Math.max(0, el.getBoundingClientRect().top + window.scrollY - ($('topbar').offsetHeight + 24));   // current chord line sits just under the header
-    if (y > window.scrollY - 5 || jump) fTarget = y;       // normally only moves forward
+    if (y > window.scrollY - 5) fTarget = y;               // only ever scrolls down, jump or not
   }
   function markChord(i) {                                        // tracked chord -> light blue, all others back to orange
     document.querySelectorAll('#song .c.now').forEach(e => e.classList.remove('now'));

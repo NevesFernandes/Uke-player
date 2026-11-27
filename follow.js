@@ -44,7 +44,7 @@
       if (!same) { pos = -1; pending = null; hist = []; miss = 0; }
     }
     function emit(jump) { if (opts.onPos && pos >= 0) opts.onPos({ i: pos, chord: ev[pos].chord, line: ev[pos].line, jump: !!jump }); }
-    function setPos(i) { if (i >= 0 && i < ev.length) { pos = i; miss = 0; pending = null; emit(true); } }
+    function setPos(i) { if (i > pos && i < ev.length) { pos = i; miss = 0; pending = null; emit(true); } }
 
     function classify(chroma) {                               // chroma: centered+normalised 12-vector
       let best = null, bs = -2, second = -2;
@@ -52,15 +52,14 @@
       return { chord: best, sim: bs, margin: bs - second };
     }
 
-    function relocalise() {                                   // match the last 3 distinct chords anywhere in the song
+    function relocalise() {                                   // match the last 3 distinct chords AHEAD of the current position (never backwards)
       if (hist.length < 3) return false;
       const h = hist.slice(-3), idx = [];
       for (let i = 0; i < ev.length; i++) if (i === 0 || ev[i].chord !== ev[i - 1].chord) idx.push(i);   // distinct-chord positions
       const hits = [];
-      for (let a = 2; a < idx.length; a++) if (ev[idx[a - 2]].chord === h[0] && ev[idx[a - 1]].chord === h[1] && ev[idx[a]].chord === h[2]) hits.push(idx[a]);
+      for (let a = 2; a < idx.length; a++) if (idx[a] > pos && ev[idx[a - 2]].chord === h[0] && ev[idx[a - 1]].chord === h[1] && ev[idx[a]].chord === h[2]) hits.push(idx[a]);
       if (!hits.length) return false;
-      hits.sort((x, y) => Math.abs(x - pos) - Math.abs(y - pos));
-      pos = hits[0]; miss = 0; pending = null; emit(true); return true;
+      pos = Math.min(...hits);                                // nearest match in front miss = 0; pending = null; emit(true); return true;
     }
 
     function onChord(c, sim) {                                // one classified strum
