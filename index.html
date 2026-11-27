@@ -90,7 +90,7 @@
 <script src="follow.js"></script>
 <script>
 (() => {
-  const APP_VERSION = 'v10 (follow never goes back, 27 Nov)';   // bump on every change so you can tell which build you are on
+  const APP_VERSION = 'v11 (robust chord follow, 27 Nov)';   // bump on every change so you can tell which build you are on
   const $ = id => document.getElementById(id);
   const LS = { get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
                set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
