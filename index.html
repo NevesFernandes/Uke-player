@@ -10,7 +10,7 @@
 <link rel="icon" href="data:,">
 <title>Uke player</title>
 <style>
-  :root { --bg:#111418; --fg:#e8e6df; --dim:#7d848c; --chord:#ffb454; --tab:#8fbf9f; --line:#242a31; --accent:#ffb454; }
+  :root { --bg:#111418; --fg:#e8e6df; --dim:#7d848c; --chord:#ffb454; --now:#7cc7ff; --tab:#8fbf9f; --line:#242a31; --accent:#ffb454; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin:0; background:var(--bg); color:var(--fg); font-family: system-ui, sans-serif; }
   button, input { font: inherit; color: inherit; }
@@ -36,6 +36,7 @@
   #song { margin:0; padding:16px 14px 40vh; white-space:pre; overflow-x:auto; line-height:1.35;
           font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size:16px; }
   .c { color:var(--chord); font-weight:700; }
+  .c.now { color:var(--now); }
   .tb { color:var(--tab); }
   .d { color:var(--dim); }
   #controls { position:fixed; left:0; right:0; bottom:0; z-index:6; padding:8px 10px calc(8px + env(safe-area-inset-bottom));
@@ -90,7 +91,7 @@
 <script src="follow.js"></script>
 <script>
 (() => {
-  const APP_VERSION = 'v7 (chords = <crd> tags only, 26 Nov)';   // bump on every change so you can tell which build you are on
+  const APP_VERSION = 'v8 (detected chord in light blue, 27 Nov)';   // bump on every change so you can tell which build you are on
   const $ = id => document.getElementById(id);
   const LS = { get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
                set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
@@ -110,7 +111,7 @@
     if (isNote(l)) return `<span class="d">${esc(l)}</span>`;
     let out = '', pos = 0, m;
     TAG.lastIndex = 0;
-    while ((m = TAG.exec(l))) { out += esc(l.slice(pos, m.index)) + `<span class="c">${esc(m[1])}</span>`; pos = m.index + m[0].length; }
+    while ((m = TAG.exec(l))) { out += esc(l.slice(pos, m.index)) + `<span class="c"${LISTENABLE.test(m[1].trim()) ? ' data-ev' : ''}>${esc(m[1])}</span>`; pos = m.index + m[0].length; }
     return out + esc(l.slice(pos));
   }
 
@@ -145,7 +146,8 @@
     const lines = text.split('\n');
     events = []; lines.forEach((l, i) => chordsInLine(l).forEach(c => events.push({ chord: c, line: i })));
     $('song').innerHTML = lines.map((l, i) => `<span class="ln" data-i="${i}">${renderLine(l)}\n</span>`).join('');
-    if (followOn && follow) follow.setEvents(events);
+    document.querySelectorAll('#song .c[data-ev]').forEach((el, k) => { if (events[k]) events[k].el = el; });   // same order as events
+    if (followOn && follow) { follow.setEvents(events); if (follow.pos() >= 0) markChord(follow.pos()); }
     $('song').style.fontSize = st.font + 'px';
     $('tval').textContent = (st.shift > 0 ? '+' : '') + st.shift;
     $('sval').textContent = (track && !rec) ? st.rate.toFixed(2) + '×' : st.speed;
@@ -230,6 +232,10 @@
     const y = Math.max(0, el.getBoundingClientRect().top + window.scrollY - ($('topbar').offsetHeight + 24));   // current chord line sits just under the header
     if (y > window.scrollY - 5 || jump) fTarget = y;       // normally only moves forward
   }
+  function markChord(i) {                                        // tracked chord -> light blue, all others back to orange
+    document.querySelectorAll('#song .c.now').forEach(e => e.classList.remove('now'));
+    if (i >= 0 && events[i] && events[i].el) events[i].el.classList.add('now');
+  }
   function followLoop(t) {
     if (!followOn) return;
     const dt = Math.min(0.1, (t - fLast) / 1000); fLast = t;
@@ -239,7 +245,7 @@
   async function startFollow() {
     stop(); $('warn').classList.add('hidden');
     follow = UkeFollow.create({
-      onPos: p => setFollowTarget(p.line, p.jump)
+      onPos: p => { markChord(p.i); setFollowTarget(p.line, p.jump); }
     });
     follow.setEvents(events);
     try { await follow.start(); }
@@ -248,7 +254,7 @@
     $('follow').classList.add('on'); $('play').disabled = true; $('rec').disabled = true; setWake(true);
   }
   function stopFollow() {
-    followOn = false; cancelAnimationFrame(fRaf); if (follow) follow.stop(); follow = null; fTarget = null;
+    followOn = false; cancelAnimationFrame(fRaf); if (follow) follow.stop(); follow = null; fTarget = null; markChord(-1);
     $('follow').classList.remove('on'); $('play').disabled = false; $('rec').disabled = false;
     if (!wakeWanted && !playing) setWake(false);
   }
